@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Android Clock</title>
+<style>
+:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#fff;color:#2b2b2b;font-family:"Google Sans",Roboto,"Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:12px;user-select:none;-webkit-user-select:none;overflow:hidden}
+#clock{width:min(90vw,56vh,500px);height:auto;touch-action:none;cursor:grab;filter:drop-shadow(0 8px 18px rgba(0,0,0,.12))}
+#clock.drag{cursor:grabbing}
+.digital{font-size:28px;font-weight:700;letter-spacing:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+button{background:#f1f1f1;color:#2b2b2b;border:0;border-radius:20px;padding:10px 18px;font:600 15px "Google Sans",Roboto,system-ui,sans-serif;cursor:pointer}
+button.main{background:#2b2b2b;color:#fff}
+button:active{transform:scale(.96)}
+.hint{font-size:13px;color:#777;text-align:center}
+#num,#lbl,.digital{font-family:var(--cf,"Google Sans",Roboto,"Segoe UI",system-ui,sans-serif)}
+.fname{font-size:13px;color:#888;padding:0 0 6px;word-break:break-all}
+#backdrop{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;z-index:5}
+#sheet{position:fixed;left:0;right:0;bottom:0;max-height:78vh;background:#fff;border-radius:24px 24px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.18);transform:translateY(105%);transition:transform .25s;z-index:6;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px);max-width:560px;margin:0 auto}
+#sheet.open{transform:none}
+#backdrop.open{display:block}
+.shead{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 8px;font-size:20px;font-weight:700}
+.sbody{overflow-y:auto;padding:4px 20px 20px;-webkit-overflow-scrolling:touch}
+h3{margin:18px 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#888}
+.presets{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.presets button{padding:4px;border-radius:16px;background:#fafafa;border:2px solid transparent;line-height:0}
+.presets button.sel{border-color:#2b2b2b}
+.presets svg{width:100%;height:auto}
+.ctl{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;font-size:15px}
+.ctl input[type=color]{width:46px;height:32px;border:1px solid #ddd;border-radius:10px;padding:2px;background:#fff}
+.ctl input[type=range]{flex:1;max-width:55%;accent-color:#2b2b2b}
+.ctl input[type=text]{border:1px solid #ddd;border-radius:10px;padding:8px 10px;font-size:15px;width:55%}
+.ctl input[type=checkbox]{width:22px;height:22px;accent-color:#2b2b2b}
+</style>
+</head>
+<body>
+
+<div class="digital" id="digital">12:15</div>
+
+<svg id="clock" viewBox="0 0 512 512" aria-label="Часы">
+  <path id="face"/>
+  <text id="num" x="256" y="132" text-anchor="middle" font-size="46" font-weight="800" font-family="Google Sans,Roboto,Segoe UI,sans-serif">12</text>
+  <text id="lbl" x="256" y="388" text-anchor="middle" font-size="19" font-family="Google Sans,Roboto,Segoe UI,sans-serif">Android</text>
+  <circle id="dot" cx="256" cy="418" r="19"/>
+  <g id="hh"><rect id="hr" rx="18"/></g>
+  <g id="mh"><rect id="mr" rx="18"/></g>
+</svg>
+
+<div class="row">
+  <button class="main" id="openS">⚙ Настройки</button>
+  <button id="now">Сейчас</button>
+  <button id="reset">Сброс</button>
+</div>
+
+<div class="hint">Тяните стрелки пальцем или мышью. Колёсико мыши крутит минутную.</div>
+
+<div id="backdrop"></div>
+
+<div id="sheet" role="dialog" aria-label="Настройки">
+  <div class="shead">
+    <span>Настройки</span>
+    <button id="closeS">Готово</button>
+  </div>
+
+  <div class="sbody">
+    <h3>Стили</h3>
+    <div class="presets" id="presets"></div>
+
+    <h3>Цвета</h3>
+    <div class="ctl"><span>Циферблат</span><input type="color" id="c_face"></div>
+    <div class="ctl"><span>Рамка</span><input type="color" id="c_rim"></div>
+    <div class="ctl"><span>Часовая стрелка</span><input type="color" id="c_hour"></div>
+    <div class="ctl"><span>Минутная стрелка</span><input type="color" id="c_min"></div>
+    <div class="ctl"><span>Текст</span><input type="color" id="c_text"></div>
+
+    <h3>Форма</h3>
+    <div class="ctl"><span>Волны</span><input type="range" id="r_lobes" min="0" max="20" step="1"></div>
+    <div class="ctl"><span>Глубина волн</span><input type="range" id="r_amp" min="0" max="22" step="1"></div>
+    <div class="ctl"><span>Толщина рамки</span><input type="range" id="r_rimW" min="0" max="36" step="1"></div>
+    <div class="ctl"><span>Толщина стрелок</span><input type="range" id="r_handW" min="20" max="50" step="1"></div>
+
+    <h3>Элементы</h3>
+    <div class="ctl"><span>Цифра часа</span><input type="checkbox" id="k_showNum"></div>
+    <div class="ctl"><span>Надпись</span><input type="checkbox" id="k_showLabel"></div>
+    <div class="ctl"><span>Текст надписи</span><input type="text" id="t_label" maxlength="16"></div>
+
+    <h3>Шрифт</h3>
+    <div class="ctl">
+      <button id="f_btn">Загрузить .ttf</button>
+      <button id="f_reset">Стандартный</button>
+      <input type="file" id="f_file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf" hidden>
+    </div>
+
+    <div class="fname" id="f_name">Стандартный шрифт</div>
+
+    <div class="ctl"><span>Кружок</span><input type="checkbox" id="k_showDot"></div>
+    <div class="ctl"><span>Связать стрелки</span><input type="checkbox" id="k_link"></div>
+    <div class="ctl"><span></span><button id="defaults">Сбросить настройки</button></div>
+  </div>
+</div>
+
+<script>
+(function(){
+
+  var $ = function(i) {
+    return document.getElementById(i);
+  };
+
+  var CX = 256, CY = 254;
+
+  var DEF = {
+    face:'#ffffff',
+    rim:'#f8ddc8',
+    hour:'#5a3622',
+    min:'#a07862',
+    text:'#2b2b2b',
+    lobes:12,
+    amp:11,
+    rimW:14,
+    handW:36,
+    showNum:true,
+    showLabel:true,
+    label:'Android',
+    showDot:true,
+    link:true
+  };
+
+  var PRESETS = [
+    {face:'#ffffff',rim:'#f8ddc8',hour:'#5a3622',min:'#a07862',text:'#2b2b2b'},
+    {face:'#f4d3d0',rim:'#f4d3d0',hour:'#a8244f',min:'#d0577e',text:'#6b1f38'},
+    {face:'#a9d98c',rim:'#a9d98c',hour:'#254019',min:'#3f6a2b',text:'#254019'},
+    {face:'#f6e27c',rim:'#f6e27c',hour:'#4f4a12',min:'#7d7620',text:'#4f4a12'},
+    {face:'#d9c9f4',rim:'#d9c9f4',hour:'#4b2f8f',min:'#7b5bc4',text:'#3b2470'},
+    {face:'#c6e4fb',rim:'#c6e4fb',hour:'#1f5a96',min:'#4a8bc8',text:'#1b4a7b'},
+    {face:'#e5a97f',rim:'#e5a97f',hour:'#7a3f20',min:'#a8683f',text:'#5c2e15'},
+    {face:'#e6458d',rim:'#e6458d',hour:'#ffffff',min:'#ffd3e6',text:'#ffffff'},
+    {face:'#5b5cd6',rim:'#5b5cd6',hour:'#ffffff',min:'#c9caff',text:'#ffffff'},
+    {face:'#c9662b',rim:'#c9662b',hour:'#3d1c0a',min:'#f7c6a3',text:'#3d1c0a'},
+    {face:'#b3621f',rim:'#b3621f',hour:'#ffe2c4',min:'#ffffff',text:'#ffe2c4'},
+    {face:'#d63cae',rim:'#d63cae',hour:'#ffffff',min:'#ffc6ee',text:'#ffffff'},
+    {face:'#7b4fd1',rim:'#7b4fd1',hour:'#ffffff',min:'#d9c6ff',text:'#ffffff'}
+  ];
+
+  var cfg = JSON.parse(JSON.stringify(DEF));
+
+  try {
+    var s = localStorage.getItem('android-clock-cfg');
+    if (s) {
+      var o = JSON.parse(s);
+      for (var k in o) {
+        if (k in cfg) cfg[k] = o[k];
+      }
+    }
+  } catch(e) {}
+
+  function save() {
+    try {
+      localStorage.setItem('android-clock-cfg', JSON.stringify(cfg));
+    } catch(e) {}
+  }
+
+  function shape(cx, cy, R, amp, lobes) {
+    var d = '', N = 360;
+
+    for (var i = 0; i <= N; i++) {
+      var t = i / N * Math.PI * 2;
+      var r = R + (lobes ? amp * Math.cos(lobes * t) : 0);
+
+      d += (i ? 'L' : 'M') +
+        (cx + r * Math.sin(t)).toFixed(1) + ' ' +
+        (cy - r * Math.cos(t)).toFixed(1);
+    }
+
+    return d + 'Z';
+  }
+
+  var H = 0, M = 90;
+
+  function norm(a) {
+    return ((a % 360) + 360) % 360;
+  }
+
+  function applyCfg() {
+    var f = $('face');
+
+    f.setAttribute('d', shape(CX, CY, 205, cfg.amp, cfg.lobes));
+    f.setAttribute('fill', cfg.face);
+    f.setAttribute('stroke', cfg.rim);
+    f.setAttribute('stroke-width', cfg.rimW);
+    f.setAttribute('stroke-linejoin', 'round');
+
+    $('num').setAttribute('fill', cfg.text);
+    $('num').style.display = cfg.showNum ? '' : 'none';
+
+    $('lbl').setAttribute('fill', cfg.text);
+    $('lbl').textContent = cfg.label;
+    $('lbl').style.display = cfg.showLabel ? '' : 'none';
+
+    $('dot').setAttribute('fill', cfg.text);
+    $('dot').setAttribute('opacity', '.14');
+    $('dot').style.display = cfg.showDot ? '' : 'none';
+
+    var w = cfg.handW, r = w / 2;
+    var hr = $('hr'), mr = $('mr');
+
+    hr.setAttribute('x', -r);
+    hr.setAttribute('width', w);
+    hr.setAttribute('y', -94);
+    hr.setAttribute('height', 94 + r);
+    hr.setAttribute('rx', r);
+    hr.setAttribute('fill', cfg.hour);
+
+    mr.setAttribute('x', -r);
+    mr.setAttribute('width', w);
+    mr.setAttribute('y', -130);
+    mr.setAttribute('height', 130 + r);
+    mr.setAttribute('rx', r);
+    mr.setAttribute('fill', cfg.min);
+
+    render();
+    save();
+  }
+
+  function render() {
+    $('hh').setAttribute(
+      'transform',
+      'translate(' + CX + ' ' + CY + ') rotate(' + H + ')'
+    );
+
+    $('mh').setAttribute(
+      'transform',
+      'translate(' + CX + ' ' + CY + ') rotate(' + M + ')'
+    );
+
+    var hr = Math.floor(norm(H) / 30) % 12 || 12;
+    var mn = Math.floor(norm(M) / 6) % 60;
+
+    $('num').textContent = hr;
+    $('digital').textContent = hr + ':' + (mn < 10 ? '0' : '') + mn;
+  }
+
+  // Перетаскивание стрелок
+
+  var svg = $('clock'), active = null, last = 0;
+
+  function ang(e) {
+    var p = svg.createSVGPoint();
+    p.x = e.clientX;
+    p.y = e.clientY;
+
+    var q = p.matrixTransform(svg.getScreenCTM().inverse());
+    var dx = q.x - CX, dy = q.y - CY;
+
+    return {
+      a: norm(Math.atan2(dx, -dy) * 180 / Math.PI),
+      r: Math.hypot(dx, dy)
+    };
+  }
+
+  function diff(a, b) {
+    var x = norm(a - b);
+    return x > 180 ? x - 360 : x;
+  }
+
+  svg.addEventListener('pointerdown', function(e) {
+    var p = ang(e);
+    var dh = Math.abs(diff(p.a, H));
+    var dm = Math.abs(diff(p.a, M));
+
+    if (Math.abs(dh - dm) < 12) {
+      active = p.r > 115 ? 'm' : 'h';
+    } else {
+      active = dh < dm ? 'h' : 'm';
+    }
+
+    last = p.a;
+    svg.classList.add('drag');
+    svg.setPointerCapture(e.pointerId);
+    move(e);
+  });
+
+  function move(e) {
+    if (!active) return;
+
+    var p = ang(e);
+    var d = diff(p.a, last);
+    last = p.a;
+
+    if (active === 'm') {
+      M += d;
+      if (cfg.link) H += d / 12;
+    } else {
+      H += d;
+      if (cfg.link) M += d * 12;
+    }
+
+    render();
+  }
+
+  svg.addEventListener('pointermove', move);
+
+  function end() {
+    active = null;
+    svg.classList.remove('drag');
+  }
+
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+
+  svg.addEventListener('wheel', function(e) {
+    e.preventDefault();
+
+    var d = e.deltaY > 0 ? 6 : -6;
+    M += d;
+
+    if (cfg.link) H += d / 12;
+
+    render();
+  }, {passive:false});
+
+  $('now').onclick = function() {
+    var n = new Date();
+
+    H = (n.getHours() % 12) * 30 + n.getMinutes() * .5;
+    M = n.getMinutes() * 6 + n.getSeconds() * .1;
+
+    render();
+  };
+
+  $('reset').onclick = function() {
+    H = 0;
+    M = 90;
+    render();
+  };
+
+  // Готовые стили
+
+  var pbox = $('presets');
+
+  PRESETS.forEach(function(p, i) {
+    var b = document.createElement('button');
+
+    b.innerHTML =
+      '<svg viewBox="0 0 100 100"><path d="' +
+      shape(50, 50, 40, 3, 12) +
+      '" fill="' + p.face +
+      '" stroke="' + p.rim +
+      '" stroke-width="3" stroke-linejoin="round"/>' +
+      '<rect x="45" y="30" width="10" height="26" rx="5" fill="' +
+      p.hour + '"/>' +
+      '<rect x="45" y="45" width="30" height="10" rx="5" fill="' +
+      p.min + '"/></svg>';
+
+    b.onclick = function() {
+      for (var k in p) cfg[k] = p[k];
+
+      syncUI();
+      applyCfg();
+    };
+
+    b.setAttribute('aria-label', 'Стиль ' + (i + 1));
+    pbox.appendChild(b);
+  });
+
+  function markSel() {
+    Array.prototype.forEach.call(pbox.children, function(b, i) {
+      var p = PRESETS[i], same = true;
+
+      for (var k in p) {
+        if (cfg[k] !== p[k]) same = false;
+      }
+
+      b.classList.toggle('sel', same);
+    });
+  }
+
+  // Настройки
+
+  var colors = ['face', 'rim', 'hour', 'min', 'text'];
+  var ranges = ['lobes', 'amp', 'rimW', 'handW'];
+  var checks = ['showNum', 'showLabel', 'showDot', 'link'];
+
+  function syncUI() {
+    colors.forEach(function(k) {
+      $('c_' + k).value = cfg[k];
+    });
+
+    ranges.forEach(function(k) {
+      $('r_' + k).value = cfg[k];
+    });
+
+    checks.forEach(function(k) {
+      $('k_' + (k === 'link' ? 'link' : k)).checked = cfg[k];
+    });
+
+    $('t_label').value = cfg.label;
+    markSel();
+  }
+
+  colors.forEach(function(k) {
+    $('c_' + k).addEventListener('input', function(e) {
+      cfg[k] = e.target.value;
+      markSel();
+      applyCfg();
+    });
+  });
+
+  ranges.forEach(function(k) {
+    $('r_' + k).addEventListener('input', function(e) {
+      cfg[k] = +e.target.value;
+      applyCfg();
+    });
+  });
+
+  checks.forEach(function(k) {
+    $('k_' + k).addEventListener('change', function(e) {
+      cfg[k] = e.target.checked;
+      applyCfg();
+    });
+  });
+
+  $('t_label').addEventListener('input', function(e) {
+    cfg.label = e.target.value;
+    applyCfg();
+  });
+
+  $('defaults').onclick = function() {
+    cfg = JSON.parse(JSON.stringify(DEF));
+    syncUI();
+    applyCfg();
+  };
+
+  function openS(o) {
+    $('sheet').classList.toggle('open', o);
+    $('backdrop').classList.toggle('open', o);
+  }
+
+  $('openS').onclick = function() {
+    openS(true);
+  };
+
+  $('closeS').onclick = function() {
+    openS(false);
+  };
+
+  $('backdrop').onclick = function() {
+    openS(false);
+  };
+
+  // Пользовательский шрифт
+
+  var curFont = null;
+
+  function b64FromBuf(buf) {
+    var s = '', b = new Uint8Array(buf), i;
+
+    for (i = 0; i < b.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    }
+
+    return btoa(s);
+  }
+
+  function bufFromB64(t) {
+    var s = atob(t), b = new Uint8Array(s.length);
+
+    for (var i = 0; i < s.length; i++) {
+      b[i] = s.charCodeAt(i);
+    }
+
+    return b.buffer;
+  }
+
+  function loadFont(buf, name, persist) {
+    var ff = new FontFace('UserFont', buf.slice(0));
+
+    return ff.load().then(function(f) {
+      if (curFont) document.fonts.delete(curFont);
+
+      curFont = f;
+      document.fonts.add(f);
+
+      document.documentElement.style.setProperty(
+        '--cf',
+        '"UserFont",sans-serif'
+      );
+
+      $('f_name').textContent = name;
+
+      if (persist) {
+        try {
+          localStorage.setItem(
+            'android-clock-font',
+            JSON.stringify({
+              n: name,
+              d: b64FromBuf(buf)
+            })
+          );
+        } catch(e) {
+          $('f_name').textContent =
+            name + ' (не сохранится после перезагрузки)';
+        }
+      }
+    }).catch(function() {
+      $('f_name').textContent = 'Не удалось загрузить этот файл шрифта';
+    });
+  }
+
+  $('f_btn').onclick = function() {
+    $('f_file').click();
+  };
+
+  $('f_file').addEventListener('change', function(e) {
+    var f = e.target.files[0];
+    if (!f) return;
+
+    var r = new FileReader();
+
+    r.onload = function() {
+      loadFont(r.result, f.name, true);
+    };
+
+    r.readAsArrayBuffer(f);
+    e.target.value = '';
+  });
+
+  $('f_reset').onclick = function() {
+    if (curFont) {
+      document.fonts.delete(curFont);
+      curFont = null;
+    }
+
+    document.documentElement.style.removeProperty('--cf');
+    $('f_name').textContent = 'Стандартный шрифт';
+
+    try {
+      localStorage.removeItem('android-clock-font');
+    } catch(e) {}
+  };
+
+  try {
+    var sf = localStorage.getItem('android-clock-font');
+
+    if (sf) {
+      var o2 = JSON.parse(sf);
+      loadFont(bufFromB64(o2.d), o2.n, false);
+    }
+  } catch(e) {}
+
+  syncUI();
+  applyCfg();
+
+})();
+</script>
+</body>
+</html>
